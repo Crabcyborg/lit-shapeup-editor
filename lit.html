@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1">
+		<title>ShapeUp Editor made using Lit Elements</title>
+		<script src="https://unpkg.com/min-string@1.0.6/min-string.min.js"></script>
+		<style>
+			#grid > div {
+				display: flex;
+			}
+			#grid > div > div {
+				cursor: pointer;
+				font-size: 0.75rem;
+				text-align: center;
+				flex: 1;
+				border-right: 1px solid black;
+				min-height: var(--cell-size);
+			}
+			#grid > div + div {
+				border-top: 1px solid black;
+			}
+			#grid > div > div:last-child {
+				border-right: none;
+			}
+			.h-screen {
+				height: 100vh;
+			}
+			.m-0 {
+				margin: 0;
+			}
+			#grid {
+				display: flex;
+				flex-direction: column;
+			}
+			.filled {
+				background-color: #000;
+			}
+		</style>
+	</head>
+	<body class="h-screen m-0">
+		<script type="module">
+			import { html, render } from 'https://unpkg.com/lit-html?module';
+
+			const state           = {
+				drawMode: false,
+				mouseDownState: false
+			};
+			const container       = document.body;
+			const cellSize        = 20;
+			const numberOfColumns = Math.ceil( document.body.clientWidth / cellSize );
+			const numberOfRows    = Math.ceil( document.body.clientHeight / cellSize );
+			const createColumn    = () => ({ selected: false });
+			const createRow       = () => Array.from( { length: numberOfColumns }, createColumn );
+			const rows            = Array.from( { length: numberOfRows }, createRow );
+			const renderRow       = cells => html`<div>${cells.map( renderCell )}</div>`;
+			const myGrid          = rows => html`
+				<div id="grid" style="--cell-size: ${cellSize}px;">
+					${rows.map( renderRow )}
+				</div>
+			`;
+			const isSelectingCell = () => 'drawing' === state.drawMode;
+			const maybeToggleCell = cell => {
+				const isSelecting = isSelectingCell();
+				if ( isSelecting !== cell.selected ) {
+					cell.selected = isSelecting;
+					renderGrid( rows );
+				}
+			};
+			const renderCell = ( cell, index ) => {
+				const handleCellClick = () => {
+					if ( 'string' !== typeof state.mouseDownState || 'moved' === state.mouseDownState ) {
+						return;
+					}
+					state.drawMode = state.mouseDownState;
+					maybeToggleCell( cell );
+					state.drawMode = false;
+				}
+				const handleMouseMove = () => {
+					if ( false !== state.drawMode ) {
+						maybeToggleCell( cell );
+					}
+					state.mouseDownState = 'moved';
+				};
+				const columnClasses = [];
+				if ( cell.selected ) {
+					columnClasses.push( 'filled' );
+				}
+				return html`
+					<div class="${columnClasses.join( ' ' )}" @click=${handleCellClick} @mousemove=${handleMouseMove}></div>
+				`;
+			};
+			const getGridAsBytes = () => {
+				let minx = null;
+				let miny = null;
+				let maxx = null;
+				let maxy = null;
+
+				rows.forEach(
+					( cells, y ) => cells.forEach(
+						( cell, x ) => {
+							if ( ! cell.selected ) {
+								return;
+							}
+
+							if ( minx === null || x < minx ) minx = x;
+							if ( miny === null || y < miny ) miny = y;
+							if ( maxx === null || x > maxx ) maxx = x;
+							if ( maxy === null || y > maxy ) maxy = y;
+						}
+					)
+				);
+
+				const height = maxy - miny + 1;
+				const width = maxx - minx + 1;
+				const bytes = [ height, width ];
+				const targets = [ 128, 64, 32, 16, 8, 4, 2, 1 ];
+
+				let index = 0;
+				let value = 0;
+
+				rows.slice( miny, maxy + 1 ).forEach(
+					cells => cells.slice( minx, maxx + 1 ).forEach(
+						cell => {
+							if ( cell.selected ) {
+								value += targets[ index ];
+							}
+							if ( ++index === 8 ) {
+								bytes.push( value );
+								value = 0;
+								index = 0;
+							}
+						}
+					)
+				);
+
+				if ( value > 0 ) {
+					bytes.push( value );
+				}
+
+				return bytes;
+			};
+			const getGridAsMinString = () => min.compress( getGridAsBytes() );
+			const renderGrid         = rows => render( myGrid( rows ), container );
+			const loadGridAsShape    = () => window.location.href = 'https://crabcyb.org/shapeup/' + getGridAsMinString();
+			const handleMouseDown    = event => {
+				state.drawMode       = event.target.classList.contains( 'filled' ) ? 'erasing' : 'drawing';
+				state.mouseDownState = state.drawMode;
+			};
+
+			document.addEventListener( 'keyup',     event => event.key === ' ' && loadGridAsShape() );
+			document.addEventListener( 'mouseup',   () => state.drawMode = false );
+			document.addEventListener( 'mousedown', handleMouseDown );
+			document.addEventListener( 'dragstart', event => event.preventDefault() );
+
+			renderGrid( rows );
+		</script>
+	</body>
+</html>
